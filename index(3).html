@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPE Merge Tree Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #0b0d11;
+  --surface:    #13161d;
+  --surface2:   #1a1e28;
+  --border:     #262b38;
+  --border-hi:  #3a4055;
+  --text:       #dfe1e8;
+  --text-dim:   #8b90a3;
+  --text-muted: #555a6e;
+  --accent:     #6ee7b7;
+  --accent-lo:  rgba(110,231,183,.08);
+  --warn:       #fbbf24;
+  --warn-lo:    rgba(251,191,36,.08);
+  --err:        #f87171;
+  --m1:         #a78bfa;
+  --m1-lo:      rgba(167,139,250,.10);
+  --m2:         #67e8f9;
+  --m2-lo:      rgba(103,232,249,.10);
+  --mono:       'IBM Plex Mono', ui-monospace, monospace;
+  --sans:       'DM Sans', system-ui, -apple-system, sans-serif;
+  --radius:     6px;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { font-size: 15px; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); min-height: 100vh; line-height: 1.55;
+}
+
+/* ═══ Header ═══ */
+.hdr {
+  padding: 1.6rem 2rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #10121a 0%, var(--bg) 100%);
+}
+.hdr h1 { font-size:1.35rem; font-weight:700; letter-spacing:-.02em; }
+.hdr h1 em { font-style:normal; color:var(--accent); }
+.hdr .sub {
+  color:var(--text-dim); font-size:.8rem; margin-top:.15rem; max-width:56rem;
+}
+.hdr .sub a { color:var(--accent); text-decoration:none; }
+
+/* ═══ Word selector ═══ */
+.bar {
+  display:flex; flex-wrap:wrap; gap:.4rem;
+  padding:1.1rem 2rem; border-bottom:1px solid var(--border); align-items:center;
+}
+.bar-label {
+  font-size:.7rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--text-muted); margin-right:.3rem;
+}
+.pill {
+  font-family:var(--mono); font-size:.78rem;
+  padding:.32rem .72rem; border-radius:999px;
+  background:var(--surface); border:1px solid var(--border);
+  color:var(--text-dim); cursor:pointer;
+  transition: border-color .12s, color .12s, background .12s;
+  user-select:none;
+}
+.pill:hover { border-color:var(--accent); color:var(--text); }
+.pill.on {
+  background:var(--accent-lo); border-color:var(--accent); color:var(--accent);
+}
+
+/* ═══ Two-panel grid ═══ */
+.grid {
+  display:grid; grid-template-columns:1fr 1fr; min-height:calc(100vh - 150px);
+}
+@media(max-width:920px){ .grid{grid-template-columns:1fr;} }
+.panel {
+  padding:1.4rem 2rem 2rem; border-right:1px solid var(--border); overflow-y:auto;
+}
+.panel:last-child { border-right:none; }
+.ptitle {
+  font-size:.7rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:.07em; color:var(--text-dim);
+  display:flex; align-items:center; gap:.45rem; margin-bottom:.9rem;
+}
+.dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+.dot.m1 { background:var(--m1); }
+.dot.m2 { background:var(--m2); }
+.ptitle .dim { font-weight:400; text-transform:none; color:var(--text-muted); }
+
+/* ═══ Variant toggle ═══ */
+.vtoggle {
+  display:inline-flex; border:1px solid var(--border); border-radius:var(--radius);
+  overflow:hidden; margin-bottom:.9rem;
+}
+.vbtn {
+  font-family:var(--mono); font-size:.72rem;
+  padding:.3rem .8rem; background:transparent;
+  color:var(--text-muted); border:none; cursor:pointer; transition:all .12s;
+}
+.vbtn.on { background:var(--surface2); color:var(--text); }
+.vbtn:hover:not(.on) { color:var(--text); }
+
+/* ═══ Token chips ═══ */
+.tokens { display:flex; flex-wrap:wrap; gap:.25rem; min-height:2rem; align-items:center; }
+.chip {
+  font-family:var(--mono); font-size:.78rem;
+  padding:.3rem .55rem; border-radius:4px; border:1px solid; white-space:pre;
+}
+.chip.m1 { background:var(--m1-lo); border-color:rgba(167,139,250,.28); color:var(--m1); }
+.chip.m2 { background:var(--m2-lo); border-color:rgba(103,232,249,.28); color:var(--m2); }
+.chip .tid { font-size:.6rem; color:var(--text-muted); margin-left:.35rem; }
+.tplus { color:var(--text-muted); font-size:.7rem; padding:0 .1rem; }
+
+/* ═══ Morph note ═══ */
+.mnote {
+  font-size:.75rem; margin-top:.55rem; padding:.45rem .7rem; border-radius:4px;
+  line-height:1.8; font-family:var(--mono);
+}
+.mnote.ok  { background:rgba(110,231,183,.05); border:1px solid rgba(110,231,183,.15); color:var(--accent); }
+.mnote.bad { background:var(--warn-lo); border:1px solid rgba(251,191,36,.15); color:var(--warn); }
+
+/* ═══ Merge step list ═══ */
+.steps { display:flex; flex-direction:column; margin-top:1.2rem; }
+.step {
+  display:flex; align-items:center; gap:.7rem;
+  padding:.42rem 0; padding-left:1.2rem;
+  border-left:2px solid var(--border);
+  position:relative;
+  opacity:0; transform:translateY(3px);
+  animation:fadeIn .22s ease forwards;
+}
+.step::before {
+  content:''; position:absolute; left:-5px;
+  width:8px; height:8px; border-radius:50%;
+  background:var(--border); border:2px solid var(--bg);
+}
+.step.hi::before  { background:var(--accent); box-shadow:0 0 6px rgba(110,231,183,.35); }
+.step.init        { border-left-color:transparent; }
+.step.init::before{ display:none; }
+.step.last        { border-left-color:transparent; }
+.step.last::before{ background:var(--accent); box-shadow:0 0 6px rgba(110,231,183,.35); }
+@keyframes fadeIn { to { opacity:1; transform:translateY(0); } }
+
+.srank {
+  font-family:var(--mono); font-size:.67rem;
+  color:var(--text-muted); min-width:5.5rem; text-align:right; flex-shrink:0;
+}
+.srank b { color:var(--warn); font-weight:500; }
+.ssyms { display:flex; gap:2px; flex-wrap:wrap; }
+.sym {
+  font-family:var(--mono); font-size:.78rem;
+  padding:.22rem .36rem; background:var(--surface2);
+  border-radius:3px; border:1px solid var(--border);
+  white-space:pre; transition:all .18s;
+}
+.sym.merged {
+  border-color:var(--accent); background:var(--accent-lo);
+  color:var(--accent); box-shadow:0 0 5px rgba(110,231,183,.12);
+}
+.sym.next {
+  border-color:var(--warn); background:var(--warn-lo); color:var(--warn);
+}
+.slabel {
+  font-size:.72rem; color:var(--text-muted);
+  font-family:var(--mono); white-space:nowrap;
+}
+
+/* ═══ Info box ═══ */
+.info {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:.85rem 1rem; margin-top:1.3rem;
+  font-size:.78rem; line-height:1.65; color:var(--text-dim);
+}
+.info strong { color:var(--text); }
+.info .row { display:flex; gap:.45rem; margin-top:.15rem; }
+.info .k { color:var(--text-muted); min-width:8.5rem; }
+
+/* ═══ Empty / loading ═══ */
+.empty {
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; padding:4rem 2rem; text-align:center;
+  color:var(--text-muted); gap:.4rem;
+}
+.empty .ico { font-size:1.8rem; opacity:.35; }
+.empty p { max-width:26rem; font-size:.82rem; line-height:1.6; }
+.spin {
+  display:inline-block; width:14px; height:14px;
+  border:2px solid var(--border); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .55s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+#status {
+  padding:.4rem 2rem; font-size:.72rem; color:var(--text-muted);
+  border-bottom:1px solid var(--border); display:none;
+}
+#status.vis { display:block; }
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1><em>BPE</em> Merge Tree Visualizer</h1>
+  <div class="sub">
+    Trace how tokenization decisions emerge from merge priority.
+    Compare <strong>Gemma 2</strong> (SentencePiece BPE, no whitespace pre-split, 256K vocab)
+    and <strong>Qwen 3</strong> (byte-level BPE, whitespace pre-split, 151K vocab) side by side.
+    &mdash; <a href="https://github.com/YOUR_USERNAME/bpe-merge-viz" target="_blank">GitHub</a>
+  </div>
+</div>
+<div id="status"></div>
+
+<div class="bar" id="bar">
+  <span class="bar-label">Word</span>
+</div>
+
+<div class="grid">
+  <div class="panel" id="p1">
+    <div class="ptitle"><span class="dot m1"></span> Gemma 2 <span class="dim">&mdash; SentencePiece BPE, 256K vocab</span></div>
+    <div id="r1" class="empty"><div class="ico">&uarr;</div><p>Pick a word above to trace how Gemma 2 tokenizes it step by step.</p></div>
+  </div>
+  <div class="panel" id="p2">
+    <div class="ptitle"><span class="dot m2"></span> Qwen 3 <span class="dim">&mdash; byte-level BPE, 151K vocab</span></div>
+    <div id="r2" class="empty"><div class="ico">&uarr;</div><p>Pick a word above to trace how Qwen 3 tokenizes it step by step.</p></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  BPE Merge Tree Visualizer — core engine
+// ═══════════════════════════════════════════════════════
+
+const WORDS = [
+  "bodyshell","lighthouse","firefighter","bookshelf",
+  "strawberry","unhappiness","basketball","moonlight",
+  "notebook","sunflower","airport","software",
+  "understand","rainbow","everybody","something",
+  "meanwhile","playground","earthquake","newspaper",
+];
+
+// Morphologically correct segmentations (for annotation)
+const MORPH = {
+  bodyshell:["body","shell"], lighthouse:["light","house"],
+  firefighter:["fire","fighter"], bookshelf:["book","shelf"],
+  strawberry:["straw","berry"], unhappiness:["un","happi","ness"],
+  basketball:["basket","ball"], moonlight:["moon","light"],
+  notebook:["note","book"], sunflower:["sun","flower"],
+  airport:["air","port"], software:["soft","ware"],
+  understand:["under","stand"], rainbow:["rain","bow"],
+  everybody:["every","body"], something:["some","thing"],
+  meanwhile:["mean","while"], playground:["play","ground"],
+  earthquake:["earth","quake"], newspaper:["news","paper"],
+};
+
+const toks    = {};
+let   word    = null;
+const variant = { m1:"spaced", m2:"spaced" };
+
+// ── GPT-2 byte ↔ unicode mapping (Qwen / byte-level BPE) ──
+function buildB2U(){
+  const bs=[];
+  for(let i=0x21;i<=0x7e;i++) bs.push(i);
+  for(let i=0xa1;i<=0xac;i++) bs.push(i);
+  for(let i=0xae;i<=0xff;i++) bs.push(i);
+  const cs=[...bs]; let n=0;
+  for(let b=0;b<256;b++){
+    if(!bs.includes(b)){ bs.push(b); cs.push(256+n); n++; }
+  }
+  const m={}; for(let i=0;i<bs.length;i++) m[bs[i]]=String.fromCodePoint(cs[i]);
+  return m;
+}
+const B2U = buildB2U();
+const U2B = {}; for(const[b,u] of Object.entries(B2U)) U2B[u]=+b;
+
+// ── Convert text → initial BPE character sequence ──
+function initChars(text, space){
+  if(space==="byte_level"){
+    return Array.from(new TextEncoder().encode(text)).map(b=>B2U[b]||String.fromCodePoint(b));
+  }
+  if(space==="sentencepiece") return Array.from(text.replace(/ /g,"\u2581"));
+  return Array.from(text);
+}
+
+// ── Human-readable display of a token ──
+function disp(tok, space){
+  if(space==="byte_level"){
+    try{
+      const bytes=Array.from(tok).map(c=>U2B[c]??c.charCodeAt(0));
+      const s = new TextDecoder("utf-8",{fatal:false}).decode(new Uint8Array(bytes));
+      return s.startsWith(" ") ? "\u2581"+s.slice(1) : s;
+    }catch{ return tok; }
+  }
+  return tok;
+}
+
+// ── BPE merge replay ──
+// Greedy: at each step find the adjacent pair with the lowest rank, merge it everywhere.
+function bpe(text, rankMap, space){
+  let syms = initChars(text, space);
+  const steps = [{ syms:[...syms], pair:null, rank:-1, mi:[] }];
+
+  for(;;){
+    if(syms.length<=1) break;
+    let best=Infinity, bp=null;
+    for(let i=0;i<syms.length-1;i++){
+      const r = rankMap[syms[i]+"\0"+syms[i+1]];
+      if(r!==undefined && r<best){ best=r; bp=[syms[i],syms[i+1]]; }
+    }
+    if(!bp) break;
+    const ns=[], mi=[];
+    let i=0;
+    while(i<syms.length){
+      if(i<syms.length-1 && syms[i]===bp[0] && syms[i+1]===bp[1]){
+        mi.push(ns.length); ns.push(bp[0]+bp[1]); i+=2;
+      } else { ns.push(syms[i]); i++; }
+    }
+    syms=ns;
+    steps.push({ syms:[...syms], pair:bp, rank:best, mi });
+  }
+  return steps;
+}
+
+// ── Rendering ──
+
+function renderBar(){
+  const el=document.getElementById("bar");
+  el.innerHTML='<span class="bar-label">Word</span>';
+  for(const w of WORDS){
+    const b=document.createElement("button");
+    b.className="pill"; b.textContent=w;
+    b.onclick=()=>pick(w);
+    el.appendChild(b);
+  }
+}
+
+function pick(w){
+  word=w;
+  document.querySelectorAll(".pill").forEach(p=>
+    p.classList.toggle("on",p.textContent===w));
+  render("m1"); render("m2");
+}
+
+function setVariant(slot,v){ variant[slot]=v; render(slot); }
+window.setVariant = setVariant;
+
+function render(slot){
+  const el  = document.getElementById(slot==="m1"?"r1":"r2");
+  const d   = toks[slot];
+  const cls = slot;
+  if(!d){ el.innerHTML=`<div class="empty"><span class="spin"></span><p>Loading\u2026</p></div>`; return; }
+  if(!word) return;
+
+  const sp = d.meta.space_handling;
+  const v  = variant[slot];
+
+  const bareIn   = word;
+  const spacedIn = sp==="sentencepiece" ? "\u2581"+word : " "+word;
+  const steps    = v==="bare" ? bpe(bareIn,d.rankMap,sp) : bpe(spacedIn,d.rankMap,sp);
+  const final    = steps[steps.length-1].syms;
+
+  const morph   = MORPH[word];
+  const morphOk = morph ? checkMorph(final,morph,sp) : null;
+
+  let h="";
+
+  // Variant toggle
+  const spLabel = sp==="sentencepiece" ? "\u2581word" : "\u0020word";
+  h+=`<div class="vtoggle">
+    <button class="vbtn ${v==="spaced"?"on":""}" onclick="setVariant('${slot}','spaced')">${spLabel} (whitespaced)</button>
+    <button class="vbtn ${v==="bare"?"on":""}"   onclick="setVariant('${slot}','bare')">word (non-whitespaced)</button>
+  </div>`;
+
+  // Morphological annotation (two-line format) or plain chips if no morph data
+  if(morph){
+    const actualStr = esc(final.map(t=>disp(t,sp)).join(" + "));
+    const morphStr  = morph.join(" + ");
+    const icon      = morphOk ? "\u2713" : "\u2717";
+    h+=`<div class="mnote ${morphOk?"ok":"bad"}">
+      <div>${icon} <span style="opacity:.7">Morphologically-aware:</span> ${morphStr}</div>
+      <div>\u00a0\u00a0 <span style="opacity:.7">Actual tokenization:&nbsp;&nbsp;&nbsp;&nbsp;</span> ${actualStr}</div>
+    </div>`;
+  } else {
+    h+=`<div class="tokens">`;
+    final.forEach((t,i)=>{
+      if(i) h+=`<span class="tplus">+</span>`;
+      const shown = esc(disp(t,sp));
+      const vid   = d.vocab[t];
+      const id    = vid!==undefined ? `<span class="tid">#${vid}</span>` : "";
+      h+=`<span class="chip ${cls}">${shown}${id}</span>`;
+    });
+    h+=`</div>`;
+  }
+
+  // Step-by-step merge tree
+  h+=`<div class="steps">`;
+  steps.forEach((s,si)=>{
+    const isInit = si===0;
+    const isLast = si===steps.length-1 && !isInit;
+    const delay  = si*55;
+    let c="step";
+    if(isInit) c+=" init";
+    if(isLast) c+=" last";
+    if(s.pair)  c+=" hi";
+
+    h+=`<div class="${c}" style="animation-delay:${delay}ms">`;
+
+    // Rank label
+    if(isInit){
+      h+=`<span class="srank">initial</span>`;
+    } else {
+      h+=`<span class="srank"><b>#${s.rank.toLocaleString()}</b> / ${d.meta.num_merges.toLocaleString()}</span>`;
+    }
+
+    // Build a set of indices that will merge in the NEXT step
+    const nextMerge = new Set();
+    if(si<steps.length-1){
+      const nx=steps[si+1];
+      if(nx.pair){
+        for(let j=0;j<s.syms.length-1;j++){
+          if(s.syms[j]===nx.pair[0] && s.syms[j+1]===nx.pair[1]){
+            nextMerge.add(j); nextMerge.add(j+1);
+          }
+        }
+      }
+    }
+
+    // Symbol boxes
+    h+=`<div class="ssyms">`;
+    s.syms.forEach((sym,i)=>{
+      let sc="sym";
+      if(s.mi && s.mi.includes(i)) sc+=" merged";
+      if(nextMerge.has(i)) sc+=" next";
+      h+=`<span class="${sc}">${esc(disp(sym,sp))}</span>`;
+    });
+    h+=`</div>`;
+
+    if(s.pair) h+=`<span class="slabel">${esc(disp(s.pair[0],sp))} + ${esc(disp(s.pair[1],sp))}</span>`;
+    h+=`</div>`;
+  });
+  h+=`</div>`;
+
+  // Info callout
+  h+=`<div class="info">
+    <strong>${steps.length-1} merge${steps.length-1!==1?"s":""} applied</strong> out of ${d.meta.num_merges.toLocaleString()} total
+    <div class="row"><span class="k">Space encoding:</span> ${sp==="sentencepiece"?"\u2581 (SentencePiece, pre-merged)":" (whitespace pre-split)"}</div>
+    <div class="row"><span class="k">Vocab size:</span> ${d.meta.vocab_size.toLocaleString()}</div>
+  </div>`;
+
+  el.innerHTML=h;
+}
+
+function checkMorph(tokens,morph,sp){
+  const clean=tokens.map((t,i)=>{
+    let s=disp(t,sp);
+    if(i===0) s=s.replace(/^[\u2581\u0120 ]/,"");
+    return s.toLowerCase();
+  }).filter(s=>s.length);
+  if(clean.length!==morph.length) return false;
+  return clean.every((t,i)=>t===morph[i].toLowerCase());
+}
+
+function esc(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+          .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Data loading ──
+
+function status(msg){
+  const el=document.getElementById("status");
+  el.textContent=msg; el.classList.toggle("vis",!!msg);
+}
+
+async function load(slot, url){
+  status(`Loading ${slot==="m1"?"Gemma 2":"Qwen 3"} data\u2026`);
+  try{
+    const r=await fetch(url);
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d=await r.json();
+    d.rankMap={};
+    for(let i=0;i<d.merges.length;i++){
+      d.rankMap[d.merges[i][0]+"\0"+d.merges[i][1]]=i;
+    }
+    toks[slot]=d;
+    status("");
+    if(word) render(slot);
+    return true;
+  }catch(e){
+    console.error(slot,e);
+    status(`Error loading ${slot==="m1"?"Gemma 2":"Qwen 3"}: ${e.message}`);
+    const el=document.getElementById(slot==="m1"?"r1":"r2");
+    el.innerHTML=`<div class="empty"><p style="color:var(--err)">Failed to load data: ${esc(e.message)}<br>Run <code>python scripts/extract_merges.py</code> first &mdash; see README.</p></div>`;
+    return false;
+  }
+}
+
+// ── Init ──
+(async()=>{
+  renderBar();
+  await Promise.all([
+    load("m1","data/gemma2.json"),
+    load("m2","data/qwen3.json"),
+  ]);
+  pick(WORDS[0]);
+})();
+</script>
+</body>
+</html>
